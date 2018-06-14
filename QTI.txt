@@ -1,0 +1,183 @@
+-- get build in range
+abort TRANSACTION;
+-- 0. Create a temp table with all builds in the range (branch+build pairs)
+DROP TABLE IF EXISTS #temp_builds_in_range;
+CREATE TABLE #temp_builds_in_range (
+    app_name,
+    branch_name,
+    build_name,
+    generated
+) as
+  SELECT
+    app_name,
+    branch_name,
+    build_name,
+    generated
+  from builds
+  where
+    customer_id = 'asd' AND
+    builds.generated between 123 and 14647073364065;
+
+select *
+from #temp_builds_in_range;
+
+-- 1.0 get latest build in range
+SELECT m.build_name -- get the row that contains the max value
+FROM #temp_builds_in_range m                  -- "m" from "max"
+  LEFT JOIN #temp_builds_in_range b           -- "b" from "bigger"
+    ON m.generated < b.generated -- want "bigger" than "max"
+WHERE b.generated IS NULL;
+
+-- 1. Create a temp table with all method keys from the last build
+DROP TABLE IF EXISTS #methods_last_build;
+CREATE TABLE #methods_last_build (
+    method_key,
+    method_modifications_since_beginning_of_history
+) as
+  SELECT
+    method_key,
+    method_modifications_since_beginning_of_history
+  from externalSchema.build_methods
+    inner join #temp_builds_in_range on
+                                       externalSchema.build_methods.build_name = 'lastes build in range' and
+                                       externalSchema.build_methods.customer_id = 'SeaLights' and
+                                       externalSchema.build_methods.build_name = 'sealights-sl-cloud-infra' and
+                                       externalSchema.build_methods.branch_name = 'origin/master11';
+
+select *
+from #methods_last_build;
+
+-- 2. Select first revision for each method from the first build, only for methods keys that are present in (1)
+
+
+--get max by generated
+-- keep only if there is no bigger than max
+
+
+delete from temp_method_covered_state;
+
+select count(*)
+from temp_method_covered_state
+where tested_revision = last_revision;
+select count(*)
+from temp_method_covered_state
+where covered_in_prod = last_revision;
+
+-- Level 1 QTI
+--Development velocity
+-- calculate Z - % of changed methods
+SELECT count(*)
+FROM temp_method_covered_state
+WHERE last_revision <> first_revision;
+SELECT count(*)
+FROM temp_method_covered_state;
+
+-- calculate average of 5 month backwards
+-- do the same for 5 other tables for prev months and get average
+
+
+--Team quality score
+
+-- create temp table with only tested methods
+-- DROP TABLE #temp_tested_methods;
+-- CREATE TABLE #temp_tested_methods (
+--     method_key,
+--     first_revision,
+--     last_revision,
+--     tested_revision,
+--     covered_in_prod
+-- ) as
+--   SELECT
+--     method_key,
+--     first_revision,
+--     last_revision,
+--     tested_revision,
+--     covered_in_prod
+--   from temp_method_covered_state
+--   where
+--     temp_method_covered_state.tested_revision = temp_method_covered_state.last_revision;
+--
+-- select *
+-- from #temp_tested_methods;
+
+-- get total methods count
+SELECT count(*)
+FROM temp_method_covered_state;
+
+-- TCD:
+SELECT count(*)
+FROM temp_method_covered_state
+WHERE tested_revision = last_revision;
+
+-- UBC:
+SELECT count(*)
+FROM temp_method_covered_state
+WHERE
+  tested_revision = last_revision AND
+  covered_in_prod = TRUE;
+-- CCC:
+
+SELECT count(*)
+FROM temp_method_covered_state
+WHERE
+  tested_revision = last_revision AND
+  covered_in_prod = TRUE;
+--TEF
+-- total tests count in range
+select
+  SUM(status.failed_test_count) as failed,
+  SUM(status.passed_test_count) as passed
+from test_status_meta as status inner join
+  #temp_builds_in_range as builds
+    on (status.build_name = builds.build_name and
+        status.branch_name = builds.branch_name and status.env_name is null);
+
+-- select SUM(status.failed_test_count) as failed, SUM(status.test_count) as tests
+-- from test_status_meta as status inner join
+--   #temp_builds_in_range as builds
+--     on (status.build_name = 'ELA_PT_CIF_20180529.3' and
+--         status.branch_name ='Terms-Conditions-V7' and status.env_name is null);
+
+
+-- LEVEL 2
+
+-- Scoring
+--   Same as level 1
+
+-- create TABLE temp_tests_state (
+--   test_name    varchar,
+--   ever_skipped boolean,
+--   ever_failed  boolean
+-- );
+
+-- get number of tests, skipped, failed
+SELECT
+  count(*)      as tests,
+  count(CASE WHEN ever_skipped
+    THEN 1 END) as skipped,
+  count(CASE WHEN ever_failed
+    THEN 1 END) as failed
+FROM temp_tests_state;
+
+--Duration
+select
+  sum(status.duration) as duration,
+  status.env_name      as env_name
+from
+  test_status_meta as status inner join
+  #temp_builds_in_range as builds
+    on (status.build_name = builds.build_name and
+        status.branch_name = builds.branch_name
+    )
+group by env_name;
+
+-- select
+--   sum(status.duration) as duration,
+--   status.env_name as env_name
+-- from test_status_meta as status
+--   where (status.build_name = 'ELA_PT_CIF_20180529.3' and
+--         status.branch_name = 'Terms-Conditions-V7') group by env_name;
+
+
+select *
+from test_status_meta;
