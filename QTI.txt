@@ -15,7 +15,7 @@ CREATE TABLE #temp_builds_in_range (
     generated
   from builds
   where
-    customer_id = 'asd' AND
+    customer_id = 'SeaLights' AND
     builds.generated between 123 and 14647073364065;
 
 select *
@@ -48,7 +48,6 @@ select *
 from #methods_last_build;
 
 -- 2. Select first revision for each method from the first build, only for methods keys that are present in (1)
-
 
 --get max by generated
 -- keep only if there is no bigger than max
@@ -104,7 +103,7 @@ FROM temp_method_covered_state;
 SELECT count(*)
 FROM temp_method_covered_state;
 
--- TCD:
+-- TCC:
 SELECT count(*)
 FROM temp_method_covered_state
 WHERE tested_revision = last_revision;
@@ -115,13 +114,14 @@ FROM temp_method_covered_state
 WHERE
   tested_revision = last_revision AND
   covered_in_prod = TRUE;
--- CCC:
 
+-- CCC:
 SELECT count(*)
 FROM temp_method_covered_state
 WHERE
   tested_revision = last_revision AND
-  covered_in_prod = TRUE;
+  last_revision <> first_revision;
+
 --TEF
 -- total tests count in range
 select
@@ -150,6 +150,18 @@ from test_status_meta as status inner join
 --   ever_failed  boolean
 -- );
 
+--Development velocity
+select
+  DATE(timestamp 'epoch' + CAST(generated AS BIGINT) / 1000 * interval '1 second') as day,
+  count(*),
+  quality.status                                                                   as status
+from #temp_builds_in_range as builds inner join build_and_env_quality as quality
+    on (builds.branch_name = quality.branch_name AND
+        builds.build_name = quality.build_name AND
+        quality.test_stage = '')
+GROUP BY quality.status, day
+ORDER BY day;
+
 -- get number of tests, skipped, failed
 SELECT
   count(*)      as tests,
@@ -158,6 +170,24 @@ SELECT
   count(CASE WHEN ever_failed
     THEN 1 END) as failed
 FROM temp_tests_state;
+
+
+-- Get env names in range
+select distinct (env_name)
+from test_status_meta as test inner join #temp_builds_in_range as builds
+    on (test.branch_name = builds.branch_name AND test.build_name = builds.build_name)
+
+--Duration  - CHECK
+select
+  sum(status.duration) as duration,
+  status.env_name      as env_name
+from
+  test_status_meta as status inner join
+  #temp_builds_in_range as builds
+    on (status.build_name = builds.build_name and
+        status.branch_name = builds.branch_name
+    )
+group by env_name;
 
 --Duration
 select
@@ -171,13 +201,59 @@ from
     )
 group by env_name;
 
--- select
---   sum(status.duration) as duration,
---   status.env_name as env_name
--- from test_status_meta as status
---   where (status.build_name = 'ELA_PT_CIF_20180529.3' and
---         status.branch_name = 'Terms-Conditions-V7') group by env_name;
 
 
-select *
-from test_status_meta;
+
+-- TGA
+
+-- Level 1
+
+-- Red - untested & modified & prod = true
+SELECT count(*)
+FROM temp_method_covered_state
+WHERE
+  (tested_revision is NULL OR tested_revision < last_revision) AND
+  last_revision <> first_revision AND
+  covered_in_prod = TRUE;
+
+-- Orange - untested & modified
+SELECT count(*)
+FROM temp_method_covered_state
+WHERE
+  (tested_revision is NULL OR tested_revision < last_revision) AND
+  last_revision <> first_revision;
+
+-- Yellow - untested & prod = true
+SELECT count(*)
+FROM temp_method_covered_state
+WHERE
+  (tested_revision is NULL OR tested_revision < last_revision) AND
+  covered_in_prod = true;
+
+-- Grey- untested & unmodified & prod = false
+SELECT count(*)
+FROM temp_method_covered_state
+WHERE
+  (tested_revision is NULL OR tested_revision < last_revision) AND
+  last_revision = first_revision AND
+  covered_in_prod = false;
+
+-- Blue - tested & prod = false
+SELECT count(*)
+FROM temp_method_covered_state
+WHERE
+  tested_revision = last_revision AND
+  covered_in_prod = FALSE;
+
+-- Green - tested & prod = true
+SELECT count(*)
+FROM temp_method_covered_state
+WHERE
+  tested_revision = last_revision AND
+  covered_in_prod = TRUE;
+
+
+INSERT INTO public.build_and_env_quality (customer_id, app_name, branch_name, build_name, test_stage, status)
+VALUES ('SeaLights', 'sealights-sl-cloud-infra', 'origin/master', '1.0.237', '', 'passed');
+
+
